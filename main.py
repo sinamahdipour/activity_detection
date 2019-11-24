@@ -21,7 +21,7 @@ import os
 
 args = sys.argv
 train_set = np.zeros((1, 9))
-directory = os.fsencode('datafolder/S1_Dataset')
+directory = os.fsencode('datafolder/S2_Dataset')
 for file in os.listdir(directory):
     filename = os.fsdecode(file)
     if filename.endswith("M") or filename.endswith("F"):
