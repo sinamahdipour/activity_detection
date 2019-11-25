@@ -40,7 +40,7 @@ print(train_set[0:5])
 
 sc = SparkContext('local', 'test')
 sqlContext = SQLContext(sc)
-train_df = sqlContext.createDataFrame(train_set)
+
 # #
 # # train_df = sqlContext.read.format("com.databricks.spark.csv") \
 # #     .options(header='false', inferschema=True).load(args[1])
@@ -50,6 +50,7 @@ train_df = sqlContext.createDataFrame(train_set)
 # #
 # #
 column_names = ['c_' + str(i) for i in range(10)]
+train_df = sqlContext.createDataFrame(train_set, schema=column_names)
 assembler = VectorAssembler(inputCols=column_names[:9], outputCol="features")
 # # train_df = assembler.transform(train_df)
 # # test_df = assembler.transform(test_df)
