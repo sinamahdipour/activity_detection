@@ -21,11 +21,10 @@ import os
 
 args = sys.argv
 train_set = np.zeros((1, 9))
-directory = os.fsencode('datafolder/S2_Dataset')
+directory = os.fsencode('datafolder/S1_Dataset')
 for file in os.listdir(directory):
     filename = os.fsdecode(file)
     if filename.endswith("M") or filename.endswith("F"):
-        # print(filename)
         content = np.loadtxt(open(os.fsdecode(directory) + "/" + filename, "r"), delimiter=",")
         # print(content[0:5])
         # train_set = np.append(train_set, content, axis=0)
@@ -38,9 +37,10 @@ for file in os.listdir(directory):
 train_set = train_set[1:]
 print(train_set.shape)
 print(train_set[0:5])
-# #
-# # sc = SparkContext('local', 'test')
-# # sqlContext = SQLContext(sc)
+
+sc = SparkContext('local', 'test')
+sqlContext = SQLContext(sc)
+train_df = sqlContext.createDataFrame(train_set)
 # #
 # # train_df = sqlContext.read.format("com.databricks.spark.csv") \
 # #     .options(header='false', inferschema=True).load(args[1])
@@ -49,17 +49,17 @@ print(train_set[0:5])
 # #     .options(header='false', inferschema=True).load(args[2])
 # #
 # #
-# # column_names = ['_c' + str(i) for i in range(14)]
-# # assembler = VectorAssembler(inputCols=column_names[:13], outputCol="features")
+column_names = ['c_' + str(i) for i in range(10)]
+assembler = VectorAssembler(inputCols=column_names[:9], outputCol="features")
 # # train_df = assembler.transform(train_df)
 # # test_df = assembler.transform(test_df)
-# # trainingData = train_df.select(['features', '_c13'])
+trainingData = train_df.select(['features', 'c_9'])
 # # testData = test_df.select(['features', '_c13'])
 # #
 # # # Creating a linear regression model
-# # lr = LinearRegression(maxIter=100, regParam=0, elasticNetParam=0, labelCol="_c13")
-# # model = lr.fit(trainingData)
-# #
+lr = LinearRegression(maxIter=100, regParam=0, elasticNetParam=0, labelCol="c_9")
+model = lr.fit(trainingData)
+
 # #
 # # # print the coefficients table:
 # # t = Texttable()
