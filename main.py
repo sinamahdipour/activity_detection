@@ -8,9 +8,13 @@ from pyspark.context import SparkContext
 from pyspark.sql.functions import col
 from pyspark.ml.linalg import Vectors
 from pyspark.ml.regression import LinearRegression
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml.classification import MultilayerPerceptronClassifier
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.evaluation import RegressionEvaluator
-
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+import pandas as pd
+import copy
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
@@ -19,9 +23,20 @@ from texttable import Texttable
 import os
 #os.environ['PYSPARK_PYTHON'] = '/usr/bin/python3'
 
+sc = SparkContext('local', 'test')
+sqlContext = SQLContext(sc)
+
+
 args = sys.argv
 train_set = np.zeros((1, 9))
 directory = os.fsencode('datafolder/S1_Dataset')
+# singleread = sqlContext.read.format("csv").option("header", "false").load("datafolder/*")
+paths = "datafolder/S1_Dataset/*,datafolder/S2_Dataset/*"
+singleread = sqlContext.read.format("com.databricks.spark.csv") \
+    .options(header='false', inferschema=True).load(paths.split(","))
+# print("readdddddddddddddddddd")
+# print(singleread.show(5))
+print("# of samples read: " + str(singleread.count()))
 for file in os.listdir(directory):
     filename = os.fsdecode(file)
     if filename.endswith("M") or filename.endswith("F"):
@@ -35,11 +50,13 @@ for file in os.listdir(directory):
         continue
 # remove the zeros row that we first initialized the array with
 train_set = train_set[1:]
-print(train_set.shape)
-print(train_set[0:5])
+# print(train_set.shape)
+# np.random.shuffle(train_set)
+# print(train_set[0:5])
+pdarr = pd.DataFrame(train_set, columns=['_c0', '_c1', '_c2', '_c3', '_c4', '_c5', '_c6', '_c7', '_c8'])
+# print(pdarr.head())
 
-sc = SparkContext('local', 'test')
-sqlContext = SQLContext(sc)
+
 
 # #
 # # train_df = sqlContext.read.format("com.databricks.spark.csv") \
@@ -49,18 +66,45 @@ sqlContext = SQLContext(sc)
 # #     .options(header='false', inferschema=True).load(args[2])
 # #
 # #
-column_names = ['c_' + str(i) for i in range(10)]
-train_df = sqlContext.createDataFrame(train_set, schema=column_names)
-assembler = VectorAssembler(inputCols=column_names[:9], outputCol="features")
-# # train_df = assembler.transform(train_df)
+column_names = ['_c' + str(i) for i in range(8)]
+# train_df = sqlContext.createDataFrame(pdarr, schema=None)
+train_df = singleread
+assembler = VectorAssembler(inputCols=column_names[:8], outputCol="features")
+train_df = assembler.transform(train_df)
 # # test_df = assembler.transform(test_df)
-trainingData = train_df.select(['features', 'c_9'])
+trainingData = train_df.select(['features', '_c8'])
+# tdmlp = trainingData
+# tdmlp = copy.deepcopy(trainingData)
 # # testData = test_df.select(['features', '_c13'])
 # #
-# # # Creating a linear regression model
-lr = LinearRegression(maxIter=100, regParam=0, elasticNetParam=0, labelCol="c_9")
-model = lr.fit(trainingData)
+# # # Creating a multi class logistic regression model
+lr = LogisticRegression(maxIter=100, regParam=0, elasticNetParam=0, labelCol="_c8")
+lr_model = lr.fit(trainingData)
+lr_predictions = lr_model.transform(trainingData)
+# print(predictions.dtype)
+# narr = np.array(predictions.select('prediction'))
+# print(narr)
+# narr = np.rint(narr)
+# predictions['prediction'] = narr
+print('First 5 predictions of LR')
+lr_predictions.select("prediction", "_c8", "features").show(5)
 
+
+# df = sqlContext.createDataFrame([(0.0, Vectors.dense([0.0, 0.0])),
+# (1.0, Vectors.dense([0.0, 1.0])),
+# (1.0, Vectors.dense([1.0, 0.0])),
+# (0.0, Vectors.dense([1.0, 1.0]))], ["label", "features"])
+# mlp2 = MultilayerPerceptronClassifier(maxIter=100, layers=[2, 2, 2], blockSize=1, seed=123)
+# model2 = mlp2.fit(df)
+
+
+# # # Creating a multi layer perceptron model
+layers = [8, 10, 10, 8, 6, 10, 5]
+mlp = MultilayerPerceptronClassifier(maxIter=10000, layers=layers, seed=326, blockSize=128, featuresCol="features", labelCol="_c8")
+mlp_model = mlp.fit(trainingData)
+mlp_predictions = mlp_model.transform(trainingData)
+print('First 5 predictions of MLP')
+mlp_predictions.select("prediction", "_c8", "features").show(5)
 # #
 # # # print the coefficients table:
 # # t = Texttable()
@@ -87,4 +131,8 @@ model = lr.fit(trainingData)
 # plt.show()
 #
 # evaluator = RegressionEvaluator(predictionCol="prediction", labelCol="_c13", metricName="rmse")
-# print("Root Mean Squared Error (RMSE) on test data = %g" % evaluator.evaluate(predictions))
+evaluator = MulticlassClassificationEvaluator(predictionCol="prediction", labelCol="_c8")
+print("Accuracy for LR model = %g" % evaluator.evaluate(lr_predictions))
+print("Accuracy for MLP model = %g" % evaluator.evaluate(mlp_predictions))
+
+sc.stop()
