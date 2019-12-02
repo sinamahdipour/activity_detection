@@ -13,8 +13,8 @@ from pyspark.ml.classification import LogisticRegression
 from pyspark.ml.classification import MultilayerPerceptronClassifier
 from pyspark.ml.classification import DecisionTreeClassifier
 from pyspark.ml.feature import VectorAssembler, MinMaxScaler
-from pyspark.ml.evaluation import RegressionEvaluator
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+from pyspark.sql.functions import rand
 import pandas as pd
 import copy
 import matplotlib.pyplot as plt
@@ -31,23 +31,23 @@ sqlContext = SQLContext(sc)
 args = sys.argv
 
 # creating a numpy array of the whole dataset
-train_set = np.zeros((1, 9))
+data_set = np.zeros((1, 9))
 directory = os.fsencode('datafolder/S1_Dataset')
 for file in os.listdir(directory):
     filename = os.fsdecode(file)
     if filename.endswith("M") or filename.endswith("F"):
         content = np.loadtxt(open(os.fsdecode(directory) + "/" + filename, "r"), delimiter=",")
         # print(content[0:5])
-        # train_set = np.append(train_set, content, axis=0)
-        train_set = np.concatenate((train_set, content), axis=0)
+        # data_set = np.append(data_set, content, axis=0)
+        data_set = np.concatenate((data_set, content), axis=0)
         # print(os.path.join(directory, filename))
         #continue
     else:
         continue
 # remove the zeros row that we first initialized the array with
-train_set = train_set[1:]
-# np.random.shuffle(train_set)
-pdarr = pd.DataFrame(train_set, columns=['_c0', '_c1', '_c2', '_c3', '_c4', '_c5', '_c6', '_c7', '_c8'])
+data_set = data_set[1:]
+# np.random.shuffle(data_set)
+pdarr = pd.DataFrame(data_set, columns=['_c0', '_c1', '_c2', '_c3', '_c4', '_c5', '_c6', '_c7', '_c8'])
 
 
 # read all files with spark
@@ -55,7 +55,10 @@ pdarr = pd.DataFrame(train_set, columns=['_c0', '_c1', '_c2', '_c3', '_c4', '_c5
 paths = "datafolder/S1_Dataset/*,datafolder/S2_Dataset/*"
 singleread = sqlContext.read.format("com.databricks.spark.csv") \
     .options(header='false', inferschema=True).load(paths.split(","))
-print("# of samples read: " + str(singleread.count()))
+# print("# of samples read: " + str(singleread.count()))
+
+# singleread = sqlContext.read.format("com.databricks.spark.csv") \
+    # .options(header='false', inferschema=True).load("dt/combined")
 
 # #
 # # train_df = sqlContext.read.format("com.databricks.spark.csv") \
@@ -67,35 +70,55 @@ print("# of samples read: " + str(singleread.count()))
 # #
 
 # use the numpy array to create spark dataframe:
-# train_df = sqlContext.createDataFrame(pdarr, schema=None)
+# data_df = sqlContext.createDataFrame(pdarr, schema=None)
 # use the spark dataframe read by single reading:
-train_df = singleread
+data_df = singleread
 
 # assembling the dataframe:
 column_names = ['_c' + str(i) for i in range(8)]
 assembler = VectorAssembler(inputCols=column_names[:8], outputCol="features")
-train_df = assembler.transform(train_df)
+data_df = assembler.transform(data_df)
 # # test_df = assembler.transform(test_df)
-trainingData = train_df.select(['features', '_c8'])
-trainingData.show(5)
+datadf = data_df.select(['features', '_c8'])
+datadf.show(5)
 mmScaler = MinMaxScaler(inputCol="features", outputCol="scaled", min=0, max=1)
-scaledM = mmScaler.fit(trainingData)
-scaledM = scaledM.transform(trainingData)
+scaledM = mmScaler.fit(datadf)
+scaledM = scaledM.transform(datadf)
 print("sssss")
 scaledM.show(5)
 print(scaledM)
-trainingData = scaledM.select(['scaled', '_c8'])
-trainingData = trainingData.withColumnRenamed('scaled', 'features')
-trainingData.show(5)
+datadf = scaledM.select(['scaled', '_c8'])
+datadf = datadf.withColumnRenamed('scaled', 'features')
+datadf.show(5)
 
-# tdmlp = trainingData
-# tdmlp = copy.deepcopy(trainingData)
+# tdmlp = datadf
+# tdmlp = copy.deepcopy(datadf)
 # # testData = test_df.select(['features', '_c13'])
 
+
+# things need to be initialized before this function
+def train_test_models(lr, mlp, dtree, acc_eval, f1_eval, trainset, testset):
+    lr_model = lr.fit(trainset)
+    lr_predictions = lr_model.transform(testset)
+    lr_acc = acc_eval.evaluate(lr_predictions)
+    lr_f1 = f1_eval.evaluate(lr_predictions)
+
+    mlp_model = mlp.fit(trainset)
+    mlp_predictions = mlp_model.transform(testset)
+    mlp_acc = acc_eval.evaluate(mlp_predictions)
+    mlp_f1 = f1_eval.evaluate(mlp_predictions)
+
+    dtree_model = dtree.fit(trainset)
+    dtree_predictions = dtree_model.transform(testset)
+    dtree_acc = acc_eval.evaluate(dtree_predictions)
+    dtree_f1 = f1_eval.evaluate(dtree_predictions)
+
+    return lr_acc, lr_f1, mlp_acc, mlp_f1, dtree_acc, dtree_f1
+
 # # # Creating a multi class logistic regression model
-lr = LogisticRegression(maxIter=100, regParam=0, elasticNetParam=0, labelCol="_c8")
-lr_model = lr.fit(trainingData)
-lr_predictions = lr_model.transform(trainingData)
+# lr = LogisticRegression(maxIter=100, regParam=0, elasticNetParam=0, labelCol="_c8")
+# lr_model = lr.fit(datadf)
+# lr_predictions = lr_model.transform(datadf)
 # print('First 5 predictions of LR')
 # lr_predictions.select("prediction", "_c8", "features").show(5)
 
@@ -110,19 +133,19 @@ lr_predictions = lr_model.transform(trainingData)
 
 # # # Creating a MLP model
 print("count of traindata")
-print(trainingData.count())
+print(datadf.count())
 layers = [8, 10, 9, 5]
-mlp = MultilayerPerceptronClassifier(maxIter=200, layers=layers, seed=12, blockSize=128, featuresCol="features", labelCol="_c8")
-mlp_model = mlp.fit(trainingData)
-mlp_predictions = mlp_model.transform(trainingData)
+# mlp = MultilayerPerceptronClassifier(maxIter=200, layers=layers, seed=12, blockSize=128, featuresCol="features", labelCol="_c8")
+# mlp_model = mlp.fit(datadf)
+# mlp_predictions = mlp_model.transform(datadf)
 # print('First 5 predictions of MLP')
 # mlp_predictions.select("prediction", "_c8", "features").show(5)
 
 
 # # # Creating a DecisionTree model
-dtree = DecisionTreeClassifier(labelCol="_c8")
-dtree_model = dtree.fit(trainingData)
-dtree_predictions = dtree_model.transform(trainingData)
+# dtree = DecisionTreeClassifier(labelCol="_c8")
+# dtree_model = dtree.fit(datadf)
+# dtree_predictions = dtree_model.transform(datadf)
 
 # #
 # # # print the coefficients table:
@@ -150,12 +173,49 @@ dtree_predictions = dtree_model.transform(trainingData)
 # plt.show()
 #
 
+# Cross Validation Implementation:
+datadf.orderBy(rand())
+print("xxxxxxxxx")
+print(datadf.count())
+kfolds = 10
+splits = datadf.randomSplit([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1], 1)
+splits[0].show(5)
+splits[1].show(5)
+# print(splits[2])
+# print(splits[2].count())
+x = splits[0].filter((col('_c8') < 0))
+print("empty x is like this:")
+x.show(5)
+for k in range(kfolds):
+    x = x.filter((col('_c8') < 0))
+    for i in range(k):
+        # print("i am in here")
+        x = x.union(splits[i])
+    for j in range(k+1, kfolds):
+        # print("i am in there")
+        x = x.union(splits[j])
+    if k == 0 or k == 1:
+        print("number of train samples:")
+        print(x.count())
+        print("number of test samples:")
+        print(splits[k].count())
+        print("train samples:")
+        x.show(5)
+        print("test samples:")
+        splits[k].show(5)
+    # count = (datadf.count()/kfolds)
+    # t1 = datadf.head(count)
+    # d2 = datadf.subtract(t1)
+    # t2 = d2.head(count)
+
+
+
 
 # evaluator = RegressionEvaluator(predictionCol="prediction", labelCol="_c13", metricName="rmse")
 evaluator = MulticlassClassificationEvaluator(predictionCol="prediction", labelCol="_c8", metricName="accuracy")
-print("Accuracy for LR model = %g" % evaluator.evaluate(lr_predictions))
-print("Accuracy for MLP model = %g" % evaluator.evaluate(mlp_predictions))
-print("Accuracy for Decision Tree model = %g" % evaluator.evaluate(dtree_predictions))
+# print("Accuracy for LR model = %g" % evaluator.evaluate(lr_predictions))
+# print("Accuracy for MLP model = %g" % evaluator.evaluate(mlp_predictions))
+# print("Accuracy for Decision Tree model = %g" % evaluator.evaluate(dtree_predictions))
 
 # trying the spark cross validation module:
 # paramGrid = ParamGridBuilder() \
