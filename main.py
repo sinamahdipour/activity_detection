@@ -60,14 +60,6 @@ singleread = sqlContext.read.format("com.databricks.spark.csv") \
 # singleread = sqlContext.read.format("com.databricks.spark.csv") \
     # .options(header='false', inferschema=True).load("dt/combined")
 
-# #
-# # train_df = sqlContext.read.format("com.databricks.spark.csv") \
-# #     .options(header='false', inferschema=True).load(args[1])
-# #
-# # test_df = sqlContext.read.format("com.databricks.spark.csv") \
-# #     .options(header='false', inferschema=True).load(args[2])
-# #
-# #
 
 # use the numpy array to create spark dataframe:
 # data_df = sqlContext.createDataFrame(pdarr, schema=None)
@@ -78,22 +70,21 @@ data_df = singleread
 column_names = ['_c' + str(i) for i in range(8)]
 assembler = VectorAssembler(inputCols=column_names[:8], outputCol="features")
 data_df = assembler.transform(data_df)
-# # test_df = assembler.transform(test_df)
 datadf = data_df.select(['features', '_c8'])
-datadf.show(5)
-mmScaler = MinMaxScaler(inputCol="features", outputCol="scaled", min=0, max=1)
-scaledM = mmScaler.fit(datadf)
-scaledM = scaledM.transform(datadf)
-print("sssss")
-scaledM.show(5)
-print(scaledM)
-datadf = scaledM.select(['scaled', '_c8'])
-datadf = datadf.withColumnRenamed('scaled', 'features')
-datadf.show(5)
+# scaler_model = MinMaxScaler(inputCol="features", outputCol="scaled", min=0, max=1)
+# scaled_data = scaler_model.fit(datadf)
+# scaled_data = scaled_data.transform(datadf)
+# datadf = scaled_data.select(['scaled', '_c8'])
+# datadf = datadf.withColumnRenamed('scaled', 'features')
 
-# tdmlp = datadf
-# tdmlp = copy.deepcopy(datadf)
-# # testData = test_df.select(['features', '_c13'])
+
+def normalize_data(dataset):
+    scaler_model = MinMaxScaler(inputCol="features", outputCol="scaled", min=0, max=1)
+    scaled_data = scaler_model.fit(dataset)
+    scaled_data = scaled_data.transform(dataset)
+    norm_data = scaled_data.select(['scaled', '_c8'])
+    norm_data = norm_data.withColumnRenamed('scaled', 'features')
+    return norm_data
 
 
 # things need to be initialized before this function
@@ -123,18 +114,8 @@ def train_test_models(lr, mlp, dtree, acc_eval, f1_eval, trainset, testset):
 # lr_predictions.select("prediction", "_c8", "features").show(5)
 
 
-# df = sqlContext.createDataFrame([(0.0, Vectors.dense([0.0, 0.0])),
-# (1.0, Vectors.dense([0.0, 1.0])),
-# (1.0, Vectors.dense([1.0, 0.0])),
-# (0.0, Vectors.dense([1.0, 1.0]))], ["label", "features"])
-# mlp2 = MultilayerPerceptronClassifier(maxIter=100, layers=[2, 2, 2], blockSize=1, seed=123)
-# model2 = mlp2.fit(df)
-
-
 # # # Creating a MLP model
-print("count of traindata")
-print(datadf.count())
-layers = [8, 10, 9, 5]
+# layers = [8, 10, 9, 5]
 # mlp = MultilayerPerceptronClassifier(maxIter=200, layers=layers, seed=12, blockSize=128, featuresCol="features", labelCol="_c8")
 # mlp_model = mlp.fit(datadf)
 # mlp_predictions = mlp_model.transform(datadf)
@@ -146,6 +127,14 @@ layers = [8, 10, 9, 5]
 # dtree = DecisionTreeClassifier(labelCol="_c8")
 # dtree_model = dtree.fit(datadf)
 # dtree_predictions = dtree_model.transform(datadf)
+
+
+# evaluator = MulticlassClassificationEvaluator(predictionCol="prediction", labelCol="_c8", metricName="accuracy")
+# print("Accuracy for LR model = %g" % evaluator.evaluate(lr_predictions))
+# print("Accuracy for MLP model = %g" % evaluator.evaluate(mlp_predictions))
+# print("Accuracy for Decision Tree model = %g" % evaluator.evaluate(dtree_predictions))
+
+
 
 # #
 # # # print the coefficients table:
@@ -171,62 +160,64 @@ layers = [8, 10, 9, 5]
 # y1 = [0, np.maximum(np.max(dt['prediction']), np.max(dt['_c13']))]
 # plt.plot(x1, y1)
 # plt.show()
-#
+
+
+# Models Initialization:
+lr_model = LogisticRegression(maxIter=200, regParam=0, elasticNetParam=0, labelCol="_c8")
+layers = [8, 10, 9, 5]
+mlp_model = MultilayerPerceptronClassifier(maxIter=200, layers=layers, seed=12, blockSize=128, featuresCol="features", labelCol="_c8")
+dtree_model = DecisionTreeClassifier(labelCol="_c8")
+
+acc_eval_model = MulticlassClassificationEvaluator(predictionCol="prediction", labelCol="_c8", metricName="accuracy")
+f1_eval_model = MulticlassClassificationEvaluator(predictionCol="prediction", labelCol="_c8", metricName="f1")
+
 
 # Cross Validation Implementation:
-datadf.orderBy(rand())
-print("xxxxxxxxx")
-print(datadf.count())
-kfolds = 10
-splits = datadf.randomSplit([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1], 1)
-splits[0].show(5)
-splits[1].show(5)
-# print(splits[2])
-# print(splits[2].count())
-x = splits[0].filter((col('_c8') < 0))
-print("empty x is like this:")
-x.show(5)
-for k in range(kfolds):
-    x = x.filter((col('_c8') < 0))
-    for i in range(k):
-        # print("i am in here")
-        x = x.union(splits[i])
-    for j in range(k+1, kfolds):
-        # print("i am in there")
-        x = x.union(splits[j])
-    if k == 0 or k == 1:
-        print("number of train samples:")
-        print(x.count())
-        print("number of test samples:")
-        print(splits[k].count())
-        print("train samples:")
-        x.show(5)
-        print("test samples:")
-        splits[k].show(5)
-    # count = (datadf.count()/kfolds)
-    # t1 = datadf.head(count)
-    # d2 = datadf.subtract(t1)
-    # t2 = d2.head(count)
+def cross_validation(lr, mlp, dtree, acc_eval, f1_eval, datadf):
+    datadf.orderBy(rand(seed=12))
+    kfolds = 10
+    splits = datadf.randomSplit([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1], 1)
+    train_split = splits[0].filter((col('_c8') < 0))
+    lras, lrfs, mlpas, mlpfs, dtreeas, dtreefs = 0, 0, 0, 0, 0, 0
+    for k in range(kfolds):
+        train_split = train_split.filter((col('_c8') < 0))
+        # joining the ones before k
+        for i in range(k):
+            train_split = train_split.union(splits[i])
+        # joining the ones after k
+        for j in range(k+1, kfolds):
+            train_split = train_split.union(splits[j])
+        test_split = splits[k]
+        train_split = normalize_data(train_split)
+        test_split = normalize_data(test_split)
+        lr_acc, lr_f1, mlp_acc, mlp_f1, dtree_acc, dtree_f1 = train_test_models(lr, mlp, dtree, acc_eval, f1_eval,
+                                                                                train_split, test_split)
+        lras = lras + lr_acc
+        lrfs = lrfs + lr_f1
+        mlpas = mlpas + mlp_acc
+        mlpfs = mlpfs + mlp_f1
+        dtreeas = dtreeas + dtree_acc
+        dtreefs = dtreefs + dtree_f1
+
+    return lras/kfolds, lrfs/kfolds, mlpas/kfolds, mlpfs/kfolds, dtreeas/kfolds, dtreefs/kfolds
 
 
+def holdout(lr, mlp, dtree, acc_eval, f1_eval, datadf):
+    datadf.orderBy(rand(seed=12))
+    splits = datadf.randomSplit([0.8, 0.2], 1)
+    train_split = normalize_data(splits[0])
+    test_split = normalize_data(splits[1])
+    lr_acc, lr_f1, mlp_acc, mlp_f1, dtree_acc, dtree_f1 = train_test_models(lr, mlp, dtree, acc_eval, f1_eval,
+                                                                            train_split, test_split)
+    return lr_acc, lr_f1, mlp_acc, mlp_f1, dtree_acc, dtree_f1
 
 
-# evaluator = RegressionEvaluator(predictionCol="prediction", labelCol="_c13", metricName="rmse")
-evaluator = MulticlassClassificationEvaluator(predictionCol="prediction", labelCol="_c8", metricName="accuracy")
-# print("Accuracy for LR model = %g" % evaluator.evaluate(lr_predictions))
-# print("Accuracy for MLP model = %g" % evaluator.evaluate(mlp_predictions))
-# print("Accuracy for Decision Tree model = %g" % evaluator.evaluate(dtree_predictions))
+# lra, lrf, mlpa, mlpf, dtreea, dtreef = cross_validation(lr_model, mlp_model, dtree_model, acc_eval_model,
+#                                                         f1_eval_model, datadf)
 
-# trying the spark cross validation module:
-# paramGrid = ParamGridBuilder() \
-#     .addGrid(mlp.maxIter, [1, 200]) \
-#     .build()
-# crossval = CrossValidator(estimator=mlp,
-#                           estimatorParamMaps=paramGrid,
-#                           evaluator=evaluator,
-#                           numFolds=5)
-# cvModel = crossval.fit(trainingData)
-# res = cvModel.transform(trainingData)
-# print("Accuracy for CV MLP model = %g" % evaluator.evaluate(res))
+lra, lrf, mlpa, mlpf, dtreea, dtreef = holdout(lr_model, mlp_model, dtree_model, acc_eval_model, f1_eval_model, datadf)
+print("acc for lr model is " + str(lra) + "f1 for it is " + str(lrf))
+print("acc for mlp model is " + str(mlpa) + "f1 for it is " + str(mlpf))
+print("acc for dtree model is " + str(dtreea) + "f1 for it is " + str(dtreef))
 
 sc.stop()
