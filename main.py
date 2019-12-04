@@ -69,6 +69,7 @@ paths = "datafolder/S1_Dataset/*,datafolder/S2_Dataset/*"
 path_s1 = "datafolder/S1_Dataset/*"
 path_s2 = "datafolder/S2_Dataset/*"
 path_s1b = "dt/s1balanced/s1combb"
+path_s2b = "dt/s2balanced/s2combb"
 # singleread = sqlContext.read.format("com.databricks.spark.csv") \
     # .options(header='false', inferschema=True).load(paths.split(","))
 singleread = sqlContext.read.format("com.databricks.spark.csv") \
@@ -176,9 +177,9 @@ def train_test_models(lr, mlp, dtree, acc_eval, f1_eval, trainset, testset):
 
 
 # Models Initialization:
-lr_model = LogisticRegression(maxIter=200, regParam=0, elasticNetParam=0, labelCol="_c8")
-layers = [8, 10, 9, 8, 6, 5]
-mlp_model = MultilayerPerceptronClassifier(maxIter=1000, layers=layers, seed=12, blockSize=128, featuresCol="features", labelCol="_c8")
+lr_model = LogisticRegression(maxIter=200, labelCol="_c8", regParam=0, elasticNetParam=0)
+layers = [8, 50, 30, 8, 6, 5]
+mlp_model = MultilayerPerceptronClassifier(maxIter=400, layers=layers, seed=12, blockSize=128, featuresCol="features", labelCol="_c8")
 dtree_model = DecisionTreeClassifier(seed=12, labelCol="_c8")
 
 acc_eval_model = MulticlassClassificationEvaluator(predictionCol="prediction", labelCol="_c8", metricName="accuracy")
