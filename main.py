@@ -30,29 +30,43 @@ sqlContext = SQLContext(sc)
 
 args = sys.argv
 
+
 # creating a numpy array of the whole dataset
-data_set = np.zeros((1, 9))
-directory = os.fsencode('datafolder/S1_Dataset')
-for file in os.listdir(directory):
-    filename = os.fsdecode(file)
-    if filename.endswith("M") or filename.endswith("F"):
-        content = np.loadtxt(open(os.fsdecode(directory) + "/" + filename, "r"), delimiter=",")
-        # print(content[0:5])
-        # data_set = np.append(data_set, content, axis=0)
-        data_set = np.concatenate((data_set, content), axis=0)
-        # print(os.path.join(directory, filename))
-        #continue
-    else:
-        continue
-# remove the zeros row that we first initialized the array with
-data_set = data_set[1:]
-# np.random.shuffle(data_set)
-pdarr = pd.DataFrame(data_set, columns=['_c0', '_c1', '_c2', '_c3', '_c4', '_c5', '_c6', '_c7', '_c8'])
+def read_in_np():
+    data_set = np.zeros((1, 9))
+    directory = os.fsencode('datafolder/S1_Dataset')
+    for file in os.listdir(directory):
+        filename = os.fsdecode(file)
+        if filename.endswith("M") or filename.endswith("F"):
+            content = np.loadtxt(open(os.fsdecode(directory) + "/" + filename, "r"), delimiter=",")
+            # print(content[0:5])
+            # data_set = np.append(data_set, content, axis=0)
+            data_set = np.concatenate((data_set, content), axis=0)
+            # print(os.path.join(directory, filename))
+            #continue
+        else:
+            continue
+    # remove the zeros row that we first initialized the array with
+    data_set = data_set[1:]
+    # np.random.shuffle(data_set)
+    pdarr = pd.DataFrame(data_set, columns=['_c0', '_c1', '_c2', '_c3', '_c4', '_c5', '_c6', '_c7', '_c8'])
+    data_df = sqlContext.createDataFrame(pdarr, schema=None)
+    return data_df
+
+
+def normalize_data(dataset):
+    scaler_model = MinMaxScaler(inputCol="features", outputCol="scaled", min=0, max=1)
+    scaled_data = scaler_model.fit(dataset)
+    scaled_data = scaled_data.transform(dataset)
+    norm_data = scaled_data.select(['scaled', '_c8'])
+    norm_data = norm_data.withColumnRenamed('scaled', 'features')
+    return norm_data
 
 
 # read all files with spark
 # singleread = sqlContext.read.format("csv").option("header", "false").load("datafolder/*")
 paths = "datafolder/S1_Dataset/*,datafolder/S2_Dataset/*"
+path_s1 = "datafolder/S1_Dataset/*"
 singleread = sqlContext.read.format("com.databricks.spark.csv") \
     .options(header='false', inferschema=True).load(paths.split(","))
 # print("# of samples read: " + str(singleread.count()))
@@ -62,7 +76,7 @@ singleread = sqlContext.read.format("com.databricks.spark.csv") \
 
 
 # use the numpy array to create spark dataframe:
-# data_df = sqlContext.createDataFrame(pdarr, schema=None)
+# data_df = read_in_np()
 # use the spark dataframe read by single reading:
 data_df = singleread
 
@@ -77,14 +91,7 @@ datadf = data_df.select(['features', '_c8'])
 # datadf = scaled_data.select(['scaled', '_c8'])
 # datadf = datadf.withColumnRenamed('scaled', 'features')
 
-
-def normalize_data(dataset):
-    scaler_model = MinMaxScaler(inputCol="features", outputCol="scaled", min=0, max=1)
-    scaled_data = scaler_model.fit(dataset)
-    scaled_data = scaled_data.transform(dataset)
-    norm_data = scaled_data.select(['scaled', '_c8'])
-    norm_data = norm_data.withColumnRenamed('scaled', 'features')
-    return norm_data
+# datadf = normalize_data(datadf)
 
 
 # things need to be initialized before this function
@@ -164,9 +171,9 @@ def train_test_models(lr, mlp, dtree, acc_eval, f1_eval, trainset, testset):
 
 # Models Initialization:
 lr_model = LogisticRegression(maxIter=200, regParam=0, elasticNetParam=0, labelCol="_c8")
-layers = [8, 10, 9, 5]
+layers = [8, 25, 20, 10, 15, 5]
 mlp_model = MultilayerPerceptronClassifier(maxIter=200, layers=layers, seed=12, blockSize=128, featuresCol="features", labelCol="_c8")
-dtree_model = DecisionTreeClassifier(labelCol="_c8")
+dtree_model = DecisionTreeClassifier(seed=12, labelCol="_c8")
 
 acc_eval_model = MulticlassClassificationEvaluator(predictionCol="prediction", labelCol="_c8", metricName="accuracy")
 f1_eval_model = MulticlassClassificationEvaluator(predictionCol="prediction", labelCol="_c8", metricName="f1")
@@ -216,8 +223,8 @@ def holdout(lr, mlp, dtree, acc_eval, f1_eval, datadf):
 #                                                         f1_eval_model, datadf)
 
 lra, lrf, mlpa, mlpf, dtreea, dtreef = holdout(lr_model, mlp_model, dtree_model, acc_eval_model, f1_eval_model, datadf)
-print("acc for lr model is " + str(lra) + "f1 for it is " + str(lrf))
-print("acc for mlp model is " + str(mlpa) + "f1 for it is " + str(mlpf))
-print("acc for dtree model is " + str(dtreea) + "f1 for it is " + str(dtreef))
+print("acc for lr model is " + str(lra) + " f1 for it is " + str(lrf))
+print("acc for mlp model is " + str(mlpa) + " f1 for it is " + str(mlpf))
+print("acc for dtree model is " + str(dtreea) + " f1 for it is " + str(dtreef))
 
 sc.stop()
