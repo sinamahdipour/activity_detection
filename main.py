@@ -67,9 +67,13 @@ def normalize_data(dataset):
 # singleread = sqlContext.read.format("csv").option("header", "false").load("datafolder/*")
 paths = "datafolder/S1_Dataset/*,datafolder/S2_Dataset/*"
 path_s1 = "datafolder/S1_Dataset/*"
+path_s2 = "datafolder/S2_Dataset/*"
+path_s1b = "dt/s1balanced/s1combb"
+# singleread = sqlContext.read.format("com.databricks.spark.csv") \
+    # .options(header='false', inferschema=True).load(paths.split(","))
 singleread = sqlContext.read.format("com.databricks.spark.csv") \
-    .options(header='false', inferschema=True).load(paths.split(","))
-# print("# of samples read: " + str(singleread.count()))
+    .options(header='false', inferschema=True).load(path_s1)
+print("# of samples read: " + str(singleread.count()))
 
 # singleread = sqlContext.read.format("com.databricks.spark.csv") \
     # .options(header='false', inferschema=True).load("dt/combined")
@@ -96,6 +100,8 @@ datadf = data_df.select(['features', '_c8'])
 
 # things need to be initialized before this function
 def train_test_models(lr, mlp, dtree, acc_eval, f1_eval, trainset, testset):
+    lr_acc, lr_f1, mlp_acc, mlp_f1, dtree_acc, dtree_f1 = 0, 0, 0, 0, 0, 0
+
     lr_model = lr.fit(trainset)
     lr_predictions = lr_model.transform(testset)
     lr_acc = acc_eval.evaluate(lr_predictions)
@@ -171,8 +177,8 @@ def train_test_models(lr, mlp, dtree, acc_eval, f1_eval, trainset, testset):
 
 # Models Initialization:
 lr_model = LogisticRegression(maxIter=200, regParam=0, elasticNetParam=0, labelCol="_c8")
-layers = [8, 25, 20, 10, 15, 5]
-mlp_model = MultilayerPerceptronClassifier(maxIter=200, layers=layers, seed=12, blockSize=128, featuresCol="features", labelCol="_c8")
+layers = [8, 10, 9, 8, 6, 5]
+mlp_model = MultilayerPerceptronClassifier(maxIter=1000, layers=layers, seed=12, blockSize=128, featuresCol="features", labelCol="_c8")
 dtree_model = DecisionTreeClassifier(seed=12, labelCol="_c8")
 
 acc_eval_model = MulticlassClassificationEvaluator(predictionCol="prediction", labelCol="_c8", metricName="accuracy")
@@ -219,10 +225,10 @@ def holdout(lr, mlp, dtree, acc_eval, f1_eval, datadf):
     return lr_acc, lr_f1, mlp_acc, mlp_f1, dtree_acc, dtree_f1
 
 
-# lra, lrf, mlpa, mlpf, dtreea, dtreef = cross_validation(lr_model, mlp_model, dtree_model, acc_eval_model,
-#                                                         f1_eval_model, datadf)
+lra, lrf, mlpa, mlpf, dtreea, dtreef = cross_validation(lr_model, mlp_model, dtree_model, acc_eval_model,
+                                                        f1_eval_model, datadf)
 
-lra, lrf, mlpa, mlpf, dtreea, dtreef = holdout(lr_model, mlp_model, dtree_model, acc_eval_model, f1_eval_model, datadf)
+# lra, lrf, mlpa, mlpf, dtreea, dtreef = holdout(lr_model, mlp_model, dtree_model, acc_eval_model, f1_eval_model, datadf)
 print("acc for lr model is " + str(lra) + " f1 for it is " + str(lrf))
 print("acc for mlp model is " + str(mlpa) + " f1 for it is " + str(mlpf))
 print("acc for dtree model is " + str(dtreea) + " f1 for it is " + str(dtreef))
